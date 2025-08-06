@@ -126,8 +126,8 @@ setup_tc_link() {
     if ! tc qdisc replace dev "$guest_if" ingress 2>>"$LOG_FILE"; then log_message "ERROR: Failed to replace ingress qdisc on $guest_if" "err"; tc qdisc del dev "$bond_if" ingress 2>/dev/null || true; return 1; fi
 
     # Add the mirroring filters
-    tc filter replace dev "$bond_if" parent ffff: prio 1 protocol 0x88cc u32 match u16 0x88cc 0xffff at -2 action mirred egress mirror dev "$guest_if" &>>"$LOG_FILE"
-    tc filter replace dev "$guest_if" parent ffff: prio 1 protocol 0x88cc u32 match u16 0x88cc 0xffff at -2 action mirred egress mirror dev "$bond_if" &>>"$LOG_FILE"
+    tc filter replace dev "$bond_if" parent ffff: prio 1 protocol 0x88cc flower action mirred egress mirror dev "$guest_if" &>>"$LOG_FILE"
+    tc filter replace dev "$guest_if" parent ffff: prio 1 protocol 0x88cc flower action mirred egress mirror dev "$bond_if" &>>"$LOG_FILE"
 
     # --- NEW VERIFICATION STEP ---
     # After attempting to add the filter, check if it actually exists.
