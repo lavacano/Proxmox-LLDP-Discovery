@@ -20,7 +20,7 @@ systemctl enable --now lldpd
 ```bash
 # Download and install
 mkdir -p /var/lib/vz/snippets
-wget -O /var/lib/vz/snippets/universal-lldp-hook.sh [YOUR_SCRIPT_URL]
+wget -O /var/lib/vz/snippets/universal-lldp-hook.sh [universal-lldp-hook.sh](https://raw.githubusercontent.com/lavacano/Proxmox-LLDP-Discovery/refs/heads/main/optimized_lldp_hook_v33.sh)
 chmod +x /var/lib/vz/snippets/universal-lldp-hook.sh
 ```
 
