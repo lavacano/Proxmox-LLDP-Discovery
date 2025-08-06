@@ -1,4 +1,4 @@
-# Proxmox LLDP Discovery Fix 🔗
+# Proxmox LLDP Discovery Fix [🔗](https://github.com/lavacano/Proxmox-LLDP-Discovery)
 
 > **Automatically enable LLDP network discovery for VMs on VLAN-aware bridges**
 
