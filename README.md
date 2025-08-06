@@ -1,4 +1,3 @@
-markdown
 # Proxmox Universal LLDP Discovery Hook
 
 **Automatically enable LLDP network discovery for both VMs and LXC containers on VLAN-aware bridges.**
