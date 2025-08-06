@@ -4,6 +4,7 @@ markdown
 **Automatically enable LLDP network discovery for both VMs and LXC containers on VLAN-aware bridges.**
 
 A production-ready hookscript that solves LLDP (Link Layer Discovery Protocol) visibility issues in Proxmox VE by intelligently mirroring network discovery traffic. It automatically detects guest types and adapts, supporting both **QEMU/KVM VMs** and **LXC containers** seamlessly.
+
 [![Proxmox VE 8.x](https://img.shields.io/badge/Proxmox%20VE-8.x-blue.svg)](https://www.proxmox.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Bash](https://img.shields.io/badge/Shell-Bash-4EAA25.svg)](https://www.gnu.org/software/bash/)
