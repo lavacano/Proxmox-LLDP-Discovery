@@ -106,6 +106,7 @@ validate_interface() {
     return 0
 }
 
+# VERIFICATION-ENHANCED: TC setup using 'replace' and explicit verification
 setup_tc_link() {
     local bond_if="$1"
     local guest_if="$2"
@@ -117,42 +118,34 @@ setup_tc_link() {
         return 0
     fi
     
-    if ! validate_interface "$bond_if"; then
-        log_message "ERROR: Bond interface $bond_if does not exist" "err"
-        return 1
-    fi
-    
-    if ! validate_interface "$guest_if"; then
-        log_message "ERROR: Guest interface $guest_if does not exist" "err"
-        return 1
-    fi
+    if ! validate_interface "$bond_if"; then log_message "ERROR: Bond interface $bond_if does not exist" "err"; return 1; fi
+    if ! validate_interface "$guest_if"; then log_message "ERROR: Guest interface $guest_if does not exist" "err"; return 1; fi
 
-    if ! tc qdisc replace dev "$bond_if" ingress 2>>"$LOG_FILE"; then
-        log_message "ERROR: Failed to replace ingress qdisc on $bond_if" "err"
-        return 1
-    fi
-    
-    if ! tc qdisc replace dev "$guest_if" ingress 2>>"$LOG_FILE"; then
-        log_message "ERROR: Failed to replace ingress qdisc on $guest_if" "err"
-        tc qdisc del dev "$bond_if" ingress 2>/dev/null || true
-        return 1
-    fi
+    # Use 'replace' for atomic, idempotent qdisc management
+    if ! tc qdisc replace dev "$bond_if" ingress 2>>"$LOG_FILE"; then log_message "ERROR: Failed to replace ingress qdisc on $bond_if" "err"; return 1; fi
+    if ! tc qdisc replace dev "$guest_if" ingress 2>>"$LOG_FILE"; then log_message "ERROR: Failed to replace ingress qdisc on $guest_if" "err"; tc qdisc del dev "$bond_if" ingress 2>/dev/null || true; return 1; fi
 
-    if ! tc filter replace dev "$bond_if" parent ffff: prio 1 protocol 0x88cc u32 match u16 0x88cc 0xffff at -2 action mirred egress mirror dev "$guest_if" 2>>"$LOG_FILE"; then
-        log_message "ERROR: Failed to replace TC filter for $bond_if -> $guest_if" "err"
+    # Add the mirroring filters
+    tc filter replace dev "$bond_if" parent ffff: prio 1 protocol 0x88cc u32 match u16 0x88cc 0xffff at -2 action mirred egress mirror dev "$guest_if" &>>"$LOG_FILE"
+    tc filter replace dev "$guest_if" parent ffff: prio 1 protocol 0x88cc u32 match u16 0x88cc 0xffff at -2 action mirred egress mirror dev "$bond_if" &>>"$LOG_FILE"
+
+    # --- NEW VERIFICATION STEP ---
+    # After attempting to add the filter, check if it actually exists.
+    sleep 1 # Give the kernel a moment to apply the rule
+    if ! tc filter show dev "$bond_if" parent ffff: | grep -q "mirred egress mirror dev $guest_if"; then
+        log_message "VERIFICATION FAILED: TC filter was not successfully applied on $bond_if." "err"
+        cleanup_tc_link "$bond_if"
+        cleanup_tc_link "$guest_if"
+        return 1
+    fi
+     if ! tc filter show dev "$guest_if" parent ffff: | grep -q "mirred egress mirror dev $bond_if"; then
+        log_message "VERIFICATION FAILED: TC filter was not successfully applied on $guest_if." "err"
         cleanup_tc_link "$bond_if"
         cleanup_tc_link "$guest_if"
         return 1
     fi
 
-    if ! tc filter replace dev "$guest_if" parent ffff: prio 1 protocol 0x88cc u32 match u16 0x88cc 0xffff at -2 action mirred egress mirror dev "$bond_if" 2>>"$LOG_FILE"; then
-        log_message "ERROR: Failed to replace TC filter for $guest_if -> $bond_if" "err"
-        cleanup_tc_link "$bond_if"
-        cleanup_tc_link "$guest_if"
-        return 1
-    fi
-
-    log_message "TC mirror filters for $bond_if <-> $guest_if are active" "info"
+    log_message "VERIFIED: TC mirror filters for $bond_if <-> $guest_if are active" "info"
     return 0
 }
 
