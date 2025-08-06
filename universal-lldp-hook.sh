@@ -106,7 +106,8 @@ validate_interface() {
     return 0
 }
 
-# VERIFICATION-ENHANCED: TC setup using 'replace' and explicit verification
+# HYBRID KERNEL-AWARE: TC setup that tries modern 'flower' classifier
+# and falls back to legacy 'u32' if verification fails.
 setup_tc_link() {
     local bond_if="$1"
     local guest_if="$2"
@@ -121,31 +122,37 @@ setup_tc_link() {
     if ! validate_interface "$bond_if"; then log_message "ERROR: Bond interface $bond_if does not exist" "err"; return 1; fi
     if ! validate_interface "$guest_if"; then log_message "ERROR: Guest interface $guest_if does not exist" "err"; return 1; fi
 
-    # Use 'replace' for atomic, idempotent qdisc management
+    # Ensure ingress qdiscs exist
     if ! tc qdisc replace dev "$bond_if" ingress 2>>"$LOG_FILE"; then log_message "ERROR: Failed to replace ingress qdisc on $bond_if" "err"; return 1; fi
     if ! tc qdisc replace dev "$guest_if" ingress 2>>"$LOG_FILE"; then log_message "ERROR: Failed to replace ingress qdisc on $guest_if" "err"; tc qdisc del dev "$bond_if" ingress 2>/dev/null || true; return 1; fi
 
-    # Add the mirroring filters
+    # --- ATTEMPT 1: Use the modern 'flower' classifier ---
+    log_message "Attempting TC setup with 'flower' classifier..." "debug"
     tc filter replace dev "$bond_if" parent ffff: prio 1 protocol 0x88cc flower action mirred egress mirror dev "$guest_if" &>>"$LOG_FILE"
     tc filter replace dev "$guest_if" parent ffff: prio 1 protocol 0x88cc flower action mirred egress mirror dev "$bond_if" &>>"$LOG_FILE"
 
-    # --- NEW VERIFICATION STEP ---
-    # After attempting to add the filter, check if it actually exists.
-    sleep 1 # Give the kernel a moment to apply the rule
-    if ! tc filter show dev "$bond_if" parent ffff: | grep -q "mirred egress mirror dev $guest_if"; then
-        log_message "VERIFICATION FAILED: TC filter was not successfully applied on $bond_if." "err"
-        cleanup_tc_link "$bond_if"
-        cleanup_tc_link "$guest_if"
-        return 1
+    # Verify if 'flower' worked
+    sleep 1
+    if tc filter show dev "$bond_if" parent ffff: | grep -q "mirred egress mirror dev $guest_if"; then
+        log_message "SUCCESS: 'flower' classifier worked. TC filters are active." "info"
+        return 0 # Success! We are done.
     fi
-     if ! tc filter show dev "$guest_if" parent ffff: | grep -q "mirred egress mirror dev $bond_if"; then
-        log_message "VERIFICATION FAILED: TC filter was not successfully applied on $guest_if." "err"
+
+    # --- ATTEMPT 2: Fallback to the legacy 'u32' classifier ---
+    log_message "WARNING: 'flower' classifier failed verification. Falling back to legacy 'u32' classifier." "warning"
+    tc filter replace dev "$bond_if" parent ffff: prio 1 protocol 0x88cc u32 match u8 0 0 action mirred egress mirror dev "$guest_if" &>>"$LOG_FILE"
+    tc filter replace dev "$guest_if" parent ffff: prio 1 protocol 0x88cc u32 match u8 0 0 action mirred egress mirror dev "$bond_if" &>>"$LOG_FILE"
+
+    # Verify if 'u32' worked
+    sleep 1
+    if ! tc filter show dev "$bond_if" parent ffff: | grep -q "mirred egress mirror dev $guest_if"; then
+        log_message "FATAL ERROR: Both 'flower' and 'u32' classifiers failed to apply TC filter on $bond_if." "err"
         cleanup_tc_link "$bond_if"
         cleanup_tc_link "$guest_if"
         return 1
     fi
 
-    log_message "VERIFIED: TC mirror filters for $bond_if <-> $guest_if are active" "info"
+    log_message "SUCCESS: Legacy 'u32' classifier worked. TC filters are active." "info"
     return 0
 }
 
