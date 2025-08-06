@@ -72,11 +72,11 @@ systemctl enable --now lldpd
 mkdir -p /var/lib/vz/snippets
 mkdir -p /usr/local/sbin
 
-# Download and install the LAUNCHER script (replace with your actual URL)
+# Download and install the LAUNCHER script
 wget -O /var/lib/vz/snippets/lldp-launcher-hook.sh https://raw.githubusercontent.com/lavacano/Proxmox-LLDP-Discovery/refs/heads/main/lldp-launcher-hook.sh
 chmod +x /var/lib/vz/snippets/lldp-launcher-hook.sh
 
-# Download and install the WORKER script (replace with your actual URL)
+# Download and install the WORKER script
 wget -O /usr/local/sbin/lldp-mirror-worker.sh https://raw.githubusercontent.com/lavacano/Proxmox-LLDP-Discovery/refs/heads/main/lldp-mirror-worker.sh
 chmod +x /usr/local/sbin/lldp-mirror-worker.sh
 ```
