@@ -26,7 +26,7 @@ systemctl enable --now lldpd
 mkdir -p /var/lib/vz/snippets
 
 # Download and install (replace with your actual URL)
-wget -O /var/lib/vz/snippets/universal-lldp-hook.sh [YOUR_SCRIPT_URL]
+wget -O /var/lib/vz/snippets/universal-lldp-hook.sh https://raw.githubusercontent.com/lavacano/Proxmox-LLDP-Discovery/refs/heads/main/universal-lldp-hook.sh
 chmod +x /var/lib/vz/snippets/universal-lldp-hook.sh
 ```
 
