@@ -1,14 +1,3 @@
-Excellent point. You are absolutely right. For long-term maintainability and readability, expanding the compressed one-liner functions is a significant improvement. It makes the code easier to understand, debug, and modify for anyone (including a future you).
-
-Here is the final, fully expanded, and production-ready version of the Universal LLDP Hookscript. This version incorporates your request for clarity and maintainability.
-
-Universal LLDP Hookscript (v4.2.0) - Final Expanded Version
-code
-Bash
-download
-content_copy
-expand_less
-
 #!/usr/bin/env bash
 
 # =============================================================================
