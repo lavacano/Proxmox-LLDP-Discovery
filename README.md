@@ -26,9 +26,9 @@ systemctl enable --now lldpd
 
 # Install scripts
 wget -O /var/lib/vz/snippets/lldp-launcher-hook.sh \
-  https://raw.githubusercontent.com/user/repo/main/lldp-launcher-hook.sh
+  https://raw.githubusercontent.com/lavacano/repo/main/lldp-launcher-hook.sh
 wget -O /usr/local/sbin/lldp-mirror-worker.sh \
-  https://raw.githubusercontent.com/user/repo/main/lldp-mirror-worker.sh
+  https://raw.githubusercontent.com/lavacano/repo/main/lldp-mirror-worker.sh
 
 chmod +x /var/lib/vz/snippets/lldp-launcher-hook.sh
 chmod +x /usr/local/sbin/lldp-mirror-worker.sh
