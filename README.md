@@ -38,17 +38,49 @@ chmod +x /usr/local/sbin/lldp-mirror-worker.sh
 
 Add to VM or LXC config:
 
+### Basic Examples
+```bash
+# Single interface mirroring
+lldp_mirror_net0=bond0     # Use bond if available
+lldp_mirror_net0=eno1      # Use physical interface if no bond
+
+# Multi-interface mirroring (v8.1+)
+lldp_mirror_net1=eno49,eno50  # Multiple 10GbE interfaces
+```
+
+### Full VM Config Example
 ```bash
 # For VM 114
 nano /etc/pve/qemu-server/114.conf
 hookscript: local:snippets/lldp-launcher-hook.sh
 lldp_mirror_net0=bond0
+lldp_mirror_net1=eno49,eno50
+```
 
+### Full LXC Config Example
+```bash
 # For LXC 101  
 nano /etc/pve/lxc/101.conf
 hookscript: local:snippets/lldp-launcher-hook.sh
 lldp_mirror_net0=bond0
+lldp_mirror_net1=eno1
 ```
+
+## Interface Selection Guide
+
+| Scenario | Recommended Config | Notes |
+|----------|-------------------|-------|
+| 1GbE with LACP bond | `bond0` | Standard bonded setup |
+| 1GbE without bond | `eno1` | Direct physical interface |
+| Single 10GbE | `eno49` | Single high-speed interface |
+| Dual 10GbE | `eno49,eno50` | Multi-interface with storm prevention |
+
+## Multi-Interface Features (v8.1+)
+
+- **Storm Prevention**: Rate limiting (30pps primary, 5pps secondary)
+- **Primary/Secondary Logic**: Auto-selects best interface as primary
+- **Failover Support**: Automatic fallback if primary interface fails
+- **Backward Compatible**: Single interface configs work unchanged
 
 ## Usage
 
@@ -67,6 +99,7 @@ lldp_mirror_net0=bond0
 - **Logs:** `/var/log/lldp-hook.log`
 - **TC Rules:** `tc filter show dev bond0 ingress`
 - **Guest Packets:** `tcpdump -i eth0 ether proto 0x88cc`
+- **Multi-Interface:** Check rate limiting with `tc filter show dev eno49 ingress`
 
 ---
 
