@@ -109,14 +109,16 @@ if [ "$PHASE" == "post-start" ]; then
         if ip link show "$mirror_if" &>/dev/null && ip link show "$guest_if" &>/dev/null; then
             log_message "Configuring: $guest_if <-> $mirror_if"
 
-            # Use the simple, known-good tc commands
+            # Clean up ingress qdiscs on both interfaces
             tc qdisc del dev "$mirror_if" ingress 2>/dev/null
             tc qdisc del dev "$guest_if" ingress 2>/dev/null
             tc qdisc add dev "$mirror_if" ingress &>> "$LOG_FILE"
             tc qdisc add dev "$guest_if" ingress &>> "$LOG_FILE"
 
-            # The simple "match-all" u32 filter
+            # Mirror LLDP traffic bidirectionally but prevent loops:
+            # 1. Mirror incoming LLDP from physical network TO guest (for discovery)
             tc filter add dev "$mirror_if" parent ffff: protocol 0x88cc u32 match u32 0 0 action mirred egress mirror dev "$guest_if" &>> "$LOG_FILE"
+            # 2. Mirror outgoing LLDP from guest TO physical network (for advertising)
             tc filter add dev "$guest_if" parent ffff: protocol 0x88cc u32 match u32 0 0 action mirred egress mirror dev "$mirror_if" &>> "$LOG_FILE"
 
             log_message "SUCCESS: TC filter commands executed for $mirror_if."
