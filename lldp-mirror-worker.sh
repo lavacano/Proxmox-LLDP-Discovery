@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # =============================================================================
-# Proxmox Unidirectional LLDP Mirroring WORKER Script
-# Version: 9.0 (Optimized for bridge-group-fwd-mask)
+# Proxmox Bidirectional LLDP Mirroring WORKER Script
+# Version: 8.1 (Hybrid)
 #
-# This script applies a single ingress tc rule to mirror LLDP traffic to
-# the guest, relying on the bridge's group_fwd_mask for egress traffic.
+# This script applies bidirectional tc rules to mirror LLDP traffic between
+# a physical host interface and a guest's virtual TAP interface.
 # =============================================================================
 
 LOG_FILE="/var/log/lldp-hook.log"
@@ -66,7 +66,7 @@ if [ -z "$MIRROR_CONFIGS" ]; then
 fi
 
 if [ "$PHASE" == "post-start" ]; then
-    log_message "Applying unidirectional ingress TC rules..."
+    log_message "Applying bidirectional TC rules..."
 
     while IFS='=' read -r key value; do
         [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
@@ -76,7 +76,7 @@ if [ "$PHASE" == "post-start" ]; then
         mirror_if="$value_clean"
         guest_if="${INTERFACE_PREFIX}${VMID}i${net_id}"
 
-        # Wait for the guest interface to appear (up to 30 seconds)
+        # Wait for the guest interface to appear
         wait_seconds=30
         interface_ready=false
         for ((i=0; i<wait_seconds; i++)); do
@@ -94,16 +94,23 @@ if [ "$PHASE" == "post-start" ]; then
         fi
 
         if ip link show "$mirror_if" &>/dev/null; then
-            # Ensure ingress qdisc exists on the physical interface
-            tc qdisc show dev "$mirror_if" | grep -q "qdisc ingress ffff:" || tc qdisc add dev "$mirror_if" ingress
+            log_message "Configuring: $guest_if <-> $mirror_if"
 
-            # Add the single ingress filter. Use VMID as preference for unique deletion.
-            pref=$((10000 + VMID))
-            log_message "Configuring: $mirror_if -> $guest_if (pref $pref)"
-            tc filter add dev "$mirror_if" parent ffff: protocol 0x88cc pref "$pref" u32 match u32 0 0 \
+            # Ensure ingress qdisc exists on both interfaces
+            tc qdisc add dev "$mirror_if" ingress 2>/dev/null
+            tc qdisc add dev "$guest_if" ingress 2>/dev/null
+
+            # Rule 1: Ingress (Physical -> Guest)
+            pref_in=$((10000 + VMID))
+            tc filter add dev "$mirror_if" parent ffff: protocol 0x88cc pref "$pref_in" u32 match u32 0 0 \
                 action mirred egress mirror dev "$guest_if" &>> "$LOG_FILE"
+            log_message "SUCCESS: Ingress rule applied ($mirror_if -> $guest_if)."
 
-            log_message "SUCCESS: Ingress mirror rule applied for $mirror_if -> $guest_if."
+            # Rule 2: Egress (Guest -> Physical)
+            pref_out=$((20000 + VMID))
+            tc filter add dev "$guest_if" parent ffff: protocol 0x88cc pref "$pref_out" u32 match u32 0 0 \
+                action mirred egress mirror dev "$mirror_if" &>> "$LOG_FILE"
+            log_message "SUCCESS: Egress rule applied ($guest_if -> $mirror_if)."
         else
             log_message "ERROR: Physical interface $mirror_if does not exist."
         fi
@@ -116,15 +123,22 @@ if [ "$PHASE" == "pre-stop" ]; then
         [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
 
         value_clean=$(echo "$value" | tr -d '\r' | sed 's/[[:space:]]//g')
+        net_id=${key##*lldp_mirror_net}
         mirror_if="$value_clean"
-        pref=$((10000 + VMID))
+        guest_if="${INTERFACE_PREFIX}${VMID}i${net_id}"
+
+        # Delete Ingress Rule
+        pref_in=$((10000 + VMID))
+        if tc filter show dev "$mirror_if" ingress 2>/dev/null | grep -q "pref $pref_in"; then
+            log_message "Deleting INGRESS filter with pref $pref_in from $mirror_if."
+            tc filter del dev "$mirror_if" parent ffff: pref "$pref_in" u32 &>> "$LOG_FILE"
+        fi
         
-        # Delete only the specific filter for this VM by its preference
-        if tc filter show dev "$mirror_if" ingress | grep -q "pref $pref"; then
-            log_message "Deleting filter with pref $pref from $mirror_if."
-            tc filter del dev "$mirror_if" parent ffff: pref "$pref" u32 &>> "$LOG_FILE"
-        else
-            log_message "No filter with pref $pref found on $mirror_if to delete."
+        # Delete Egress Rule
+        pref_out=$((20000 + VMID))
+        if ip link show "$guest_if" &>/dev/null && tc filter show dev "$guest_if" ingress 2>/dev/null | grep -q "pref $pref_out"; then
+            log_message "Deleting EGRESS filter with pref $pref_out from $guest_if."
+            tc filter del dev "$guest_if" parent ffff: pref "$pref_out" u32 &>> "$LOG_FILE"
         fi
     done <<< "$MIRROR_CONFIGS"
 fi
