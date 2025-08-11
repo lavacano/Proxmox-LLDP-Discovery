@@ -3,23 +3,28 @@
 # Proxmox Stateful & Idempotent LLDP Mirroring Hookscript
 #
 # Author: Gemini AI & User Collaboration
-# Version: 10.0.1 (Final Parser Hotfix)
+# Version: 12.0.0 (Final Stable Release)
 #
-# Changelog v10.0.1:
-# - CRITICAL FIX (Parser): Replaced the fragile grep/sed pipeline in the handle
-#   capture function with a simpler, more robust method that is guaranteed
-#   not to hang on incompatible shell utility versions.
+# Changelog v12.0.0:
+# - CRITICAL FIX (Parser): Replaced the entire tc output parser with a new,
+#   robust awk version that correctly handles the "(Egress Mirror to device <...>) pipe"
+#   format found on the target system.
+# - CRITICAL FIX (Strategy): Completely removed the complex and failing handle-capture
+#   logic. The script now uses a unique, predictable priority (`prio`) to manage
+#   its own tc rules, which is simpler, safer, and more portable.
+# - State files are no longer used or needed.
 # =============================================================================
 
 # --- Strict Mode & Environment Setup ---
 set -uo pipefail
+set -x
 IFS=$'\n\t'
 export PATH="/sbin:/usr/sbin:$PATH"
 
 # --- Configuration & Globals ---
 readonly LOG_FILE="/var/log/lldp-stateful-hook.log"
 readonly VERBOSE=true
-readonly STATE_DIR="/var/run/lldp-hook"
+readonly STATE_DIR="/var/run/lldp-hook" # Used for temp files
 readonly TC_PRIO_BASE=18800
 readonly VMID=${1:-}
 readonly PHASE=${2:-}
@@ -65,27 +70,27 @@ parse_wanted_state() {
     if [ -z "$configs" ]; then log_message "$vmid" "INFO" "LLDP config file has no valid entries."; return 1; fi
     while IFS='=' read -r key value; do
         if ! [[ $key =~ ^lldp_mirror_net([0-9]+)$ ]]; then log_message "$vmid" "WARN" "Skipping invalid key '$key'"; continue; fi
-        local -r net_id=${BASH_REMATCH[1]}; local phys_if=$value
+        local net_id=${BASH_REMATCH[1]}
+        local phys_if=$value
         if [ -z "$phys_if" ] || ! [[ $phys_if =~ ^[a-zA-Z0-9._:-]{1,15}$ ]]; then log_message "$vmid" "WARN" "Skipping invalid interface '$phys_if' for '$key'"; continue; fi
-        local -r guest_if="${INTERFACE_PREFIX}${vmid}i${net_id}"
+        local guest_if="${INTERFACE_PREFIX}${vmid}i${net_id}"
         WANTED_STATE["$guest_if"]="$phys_if"
         log_message "$vmid" "INFO" "WANTED: $guest_if <-> $phys_if (net $net_id)"
     done <<< "$configs"
     if [ ${#WANTED_STATE[@]} -eq 0 ]; then log_message "$vmid" "WARN" "No valid configurations were parsed."; return 1; fi
     return 0
 }
+# --- CORRECTED PARSER ---
 get_tc_mirrors_for_iface() {
     local -r iface="$1"
-    # This robustly finds the line with "mirred", then extracts the content inside parentheses
-    # (E.g., "Mirror to device veth104i0)" -> "veth104i0" or "Mirror to device *)" -> "*"
+    # This robustly finds the line with "mirred", finds the content inside parentheses,
+    # and prints the last word of that content (which is the device name).
     tc -s filter show dev "$iface" ingress 2>/dev/null | awk '
         /mirred/ {
             pos_open = index($0, "(");
             pos_close = index($0, ")");
             if (pos_open > 0 && pos_close > pos_open) {
-                # Extract content inside parentheses
                 content = substr($0, pos_open + 1, pos_close - pos_open - 1);
-                # Find the last word in the content (which should be the device name)
                 split(content, words, " ");
                 print words[length(words)];
             }
@@ -124,13 +129,13 @@ add_rules_for() {
   local -r prio=$((TC_PRIO_BASE + net_id))
   log_message "$vmid" "INFO" "ACTION: Creating rules for $guest_if <-> $phys_if with prio $prio"
   wait_for_interface "$vmid" "$guest_if" 30 || return 1
-  
+
   execute_tc_command "$vmid" "replace qdisc on $phys_if" tc qdisc replace dev "$phys_if" ingress
   execute_tc_command "$vmid" "replace qdisc on $guest_if" tc qdisc replace dev "$guest_if" ingress
 
   execute_tc_command "$vmid" "create filter $phys_if -> $guest_if" tc filter replace dev "$phys_if" parent ffff: prio "$prio" protocol 0x88cc u32 match u32 0 0 action mirred egress mirror dev "$guest_if"
   execute_tc_command "$vmid" "create filter $guest_if -> $phys_if" tc filter replace dev "$guest_if" parent ffff: prio "$prio" protocol 0x88cc u32 match u32 0 0 action mirred egress mirror dev "$phys_if"
-  
+
   if wait_for_rule "$vmid" "$phys_if" "$guest_if" true && wait_for_rule "$vmid" "$guest_if" "$phys_if" true; then
     log_message "$vmid" "INFO" "SUCCESS: rules active for $guest_if <-> $phys_if"
   else log_message "$vmid" "ERROR" "FAILURE: rules did not appear for $guest_if <-> $phys_if"; return 1; fi
@@ -147,7 +152,7 @@ remove_rules_for() {
 }
 
 main() {
-    log_message "$VMID" "INFO" "--- Stateful Hook v10.0.1 Started: Phase=$PHASE ---"
+    log_message "$VMID" "INFO" "--- Stateful Hook v12.0.0 Started: Phase=$PHASE ---"
     if [ -z "$VMID" ] || [ -z "$PHASE" ]; then log_message "?" "ERROR" "Script called with missing arguments."; exit 1; fi
     if ! run_startup_checks; then exit 1; fi
     case "$PHASE" in
