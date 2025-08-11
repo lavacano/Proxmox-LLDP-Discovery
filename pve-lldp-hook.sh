@@ -17,7 +17,7 @@
 
 # --- Strict Mode & Environment Setup ---
 set -uo pipefail
-set -x
+#set -x #remove line comment for DEBUG
 IFS=$'\n\t'
 export PATH="/sbin:/usr/sbin:$PATH"
 
